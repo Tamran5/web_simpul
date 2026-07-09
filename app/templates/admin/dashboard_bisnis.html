@@ -1,0 +1,511 @@
+{% extends "base_admin.html" %}
+
+{% set active_page = "analisis" %}
+
+{% block title %}Analitik Bisnis | Simpul Admin{% endblock %}
+{% block header_title %}Analitik Bisnis{% endblock %}
+
+{% block content %}
+
+{# ── HEADER ──────────────────────────────────────────────────────────────── #}
+<div class="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6">
+    <div>
+        <span class="text-[10px] font-bold uppercase tracking-[0.15em] text-outline">Kesehatan Bisnis</span>
+        <h2 class="font-serif text-3xl font-bold text-on-surface mt-1">Dasbor Analitik Simpul</h2>
+    </div>
+    <div class="flex flex-wrap items-center gap-3">
+        {# ── Filter rentang bulan ─────────────────────────────────────────── #}
+        <form method="GET" class="flex items-center gap-2">
+            <label class="text-xs text-on-surface-variant font-medium">Tampilkan:</label>
+            <select name="bulan" onchange="this.form.submit()"
+                class="text-xs text-on-surface border border-outline-variant/40 bg-surface-container-lowest
+                       rounded-full px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-pointer">
+                {% for opt in [3, 6, 9, 12] %}
+                <option value="{{ opt }}" {% if n_months == opt %}selected{% endif %}>
+                    {{ opt }} Bulan Terakhir
+                </option>
+                {% endfor %}
+            </select>
+        </form>
+
+        {# ── Timestamp & refresh indicator ───────────────────────────────── #}
+        <div class="flex items-center gap-2 text-xs text-on-surface-variant bg-surface-container-lowest
+                    border border-outline-variant/30 rounded-full px-4 py-2">
+            <span class="material-symbols-outlined text-[15px]">calendar_today</span>
+            Data per <span class="font-semibold text-on-surface ml-1" id="lastUpdate">
+                {{ analytics.generated_at }}
+            </span>
+            <span id="refreshDot" class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse ml-1"
+                  title="Auto-refresh setiap 2 menit"></span>
+        </div>
+    </div>
+</div>
+
+{# ── KPI TILES ────────────────────────────────────────────────────────────── #}
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+
+    {# Total Pengguna #}
+    <div class="bg-surface p-5 rounded-[20px] border border-outline-variant/30 pillowy-shadow">
+        <div class="flex items-center gap-2 mb-3">
+            <span class="material-symbols-outlined text-[18px] text-on-surface-variant">group</span>
+            <p class="text-xs text-on-surface-variant font-medium">Total Pengguna</p>
+        </div>
+        <h3 class="text-3xl font-serif text-on-surface" id="kpi-total">{{ total_users }}</h3>
+        <p class="text-[11px] text-on-surface-variant mt-1 flex items-center gap-1">
+            <span class="material-symbols-outlined text-[13px]">database</span>
+            Data langsung dari DB
+        </p>
+    </div>
+
+    {# Pasangan Sinkron #}
+    <div class="bg-surface p-5 rounded-[20px] border border-outline-variant/30 pillowy-shadow">
+        <div class="flex items-center gap-2 mb-3">
+            <span class="material-symbols-outlined text-[18px] text-primary">link</span>
+            <p class="text-xs text-primary font-semibold">Pasangan Sinkron</p>
+        </div>
+        <h3 class="text-3xl font-serif text-primary" id="kpi-synced">{{ synced_pairs }}</h3>
+        <p class="text-[11px] text-primary mt-1 flex items-center gap-1">
+            <span class="material-symbols-outlined text-[13px]">sync</span>
+            Status: synced
+        </p>
+    </div>
+
+    {# Adopsi Pairing #}
+    <div class="bg-surface p-5 rounded-[20px] border border-outline-variant/30 pillowy-shadow">
+        <div class="flex items-center gap-2 mb-3">
+            <span class="material-symbols-outlined text-[18px] text-on-surface-variant">percent</span>
+            <p class="text-xs text-on-surface-variant font-medium">Adopsi Pairing</p>
+        </div>
+        <h3 class="text-3xl font-serif text-on-surface" id="kpi-adoption">{{ adoption_rate }}%</h3>
+        <p class="text-[11px] text-on-surface-variant mt-1 flex items-center gap-1">
+            <span class="material-symbols-outlined text-[13px]">calculate</span>
+            Sinkron ÷ Total × 100
+        </p>
+    </div>
+
+    {# Selesai Legalitas #}
+    <div class="bg-surface p-5 rounded-[20px] border border-outline-variant/30 pillowy-shadow">
+        <div class="flex items-center gap-2 mb-3">
+            <span class="material-symbols-outlined text-[18px] text-on-surface-variant">task_alt</span>
+            <p class="text-xs text-on-surface-variant font-medium">Selesai Legalitas</p>
+        </div>
+        <h3 class="text-3xl font-serif text-on-surface" id="kpi-legal">{{ legal_done_rate }}%</h3>
+        <p class="text-[11px] text-on-surface-variant mt-1 flex items-center gap-1">
+            <span class="material-symbols-outlined text-[13px]">verified</span>
+            Akad disetujui KUA
+        </p>
+    </div>
+
+</div>
+
+{# ── LINE CHART: TREN PENDAFTARAN & SINKRONISASI ─────────────────────────── #}
+<div class="bg-surface rounded-[24px] pillowy-shadow border border-outline-variant/20 p-6 mb-6">
+    <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-5">
+        <div>
+            <span class="text-[10px] font-bold uppercase tracking-[0.15em] text-outline">Adopsi Fitur Utama</span>
+            <h3 class="font-serif text-xl font-bold text-on-surface mt-0.5">Tren Pendaftaran & Sinkronisasi Pasangan</h3>
+            <p class="text-xs text-on-surface-variant mt-1" id="chartSubtitle">
+                {{ analytics.chart.labels | first }} – {{ analytics.chart.labels | last }} · per bulan · data real-time
+            </p>
+        </div>
+        <div class="flex flex-wrap gap-3 text-xs text-on-surface-variant shrink-0">
+            <span class="flex items-center gap-1.5">
+                <span class="inline-block w-3 h-1 rounded-full bg-[#5B7CF6]"></span>
+                Pendaftaran baru
+            </span>
+            <span class="flex items-center gap-1.5">
+                <span class="inline-block w-3 h-1 rounded-full bg-[#34C985]"></span>
+                Berhasil sinkron
+            </span>
+            <span class="flex items-center gap-1.5">
+                <span class="inline-block w-4 border-t-2 border-dashed border-[#F5A623]"></span>
+                Pending pairing
+            </span>
+        </div>
+    </div>
+    <div class="relative w-full" style="height:260px;">
+        <canvas id="lineChart" role="img"
+            aria-label="Grafik tren pendaftaran dan sinkronisasi pasangan dari database">
+        </canvas>
+    </div>
+</div>
+
+{# ── TABEL RIWAYAT DATA BULANAN ──────────────────────────────────────────── #}
+<div class="bg-surface rounded-[24px] pillowy-shadow border border-outline-variant/20 p-6 mb-6">
+    <div class="mb-4">
+        <span class="text-[10px] font-bold uppercase tracking-[0.15em] text-outline">Riwayat Historis</span>
+        <h3 class="font-serif text-xl font-bold text-on-surface mt-0.5">Data Bulanan</h3>
+        <p class="text-xs text-on-surface-variant mt-1">
+            Rekap {{ n_months }} bulan terakhir langsung dari database
+        </p>
+    </div>
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm" id="historyTable">
+            <thead>
+                <tr class="border-b border-outline-variant/30">
+                    <th class="text-left py-2 px-3 text-xs font-semibold text-on-surface-variant">Bulan</th>
+                    <th class="text-right py-2 px-3 text-xs font-semibold text-on-surface-variant">Pendaftaran</th>
+                    <th class="text-right py-2 px-3 text-xs font-semibold text-on-surface-variant">Berhasil Sinkron</th>
+                    <th class="text-right py-2 px-3 text-xs font-semibold text-on-surface-variant">Pending Pairing</th>
+                    <th class="text-right py-2 px-3 text-xs font-semibold text-on-surface-variant">Konversi (%)</th>
+                </tr>
+            </thead>
+            <tbody id="historyBody">
+                {% for row in analytics.history | reverse %}
+                <tr class="border-b border-outline-variant/10 hover:bg-surface-container-lowest transition-colors
+                           {% if loop.first %}font-semibold{% endif %}">
+                    <td class="py-2.5 px-3 text-on-surface flex items-center gap-2">
+                        {% if loop.first %}
+                        <span class="w-1.5 h-1.5 rounded-full bg-primary inline-block"></span>
+                        {% endif %}
+                        {{ row.label }}
+                        {% if loop.first %}<span class="text-[10px] text-primary ml-1">(terbaru)</span>{% endif %}
+                    </td>
+                    <td class="py-2.5 px-3 text-right text-on-surface">
+                        {{ '{:,}'.format(row.registrations).replace(',', '.') }}
+                    </td>
+                    <td class="py-2.5 px-3 text-right text-primary">
+                        {{ '{:,}'.format(row.synced).replace(',', '.') }}
+                    </td>
+                    <td class="py-2.5 px-3 text-right text-[#F5A623]">
+                        {{ '{:,}'.format(row.pending).replace(',', '.') }}
+                    </td>
+                    <td class="py-2.5 px-3 text-right text-on-surface-variant">
+                        {% if row.registrations > 0 %}
+                            {{ (row.synced / row.registrations * 100) | round(1) }}%
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{# ── BARIS BAWAH: FUNNEL + DONUT ─────────────────────────────────────────── #}
+<div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
+
+    {# FUNNEL BAR — 3/5 lebar #}
+    <div class="lg:col-span-3 bg-surface rounded-[24px] pillowy-shadow border border-outline-variant/20 p-6">
+        <div class="mb-5">
+            <span class="text-[10px] font-bold uppercase tracking-[0.15em] text-outline">Hambatan Administrasi</span>
+            <h3 class="font-serif text-xl font-bold text-on-surface mt-0.5">Funneling Legalitas Pernikahan</h3>
+            <p class="text-xs text-on-surface-variant mt-1">
+                % pengguna yang menyelesaikan tiap tahap · data dari <code class="text-[10px]">journey_step_progress</code>
+            </p>
+        </div>
+        <div class="space-y-5" id="funnelContainer">
+            {% for item in analytics.funnel %}
+            <div>
+                <div class="flex items-center justify-between mb-1.5">
+                    <div class="flex items-center gap-2">
+                        <span class="inline-block w-2 h-2 rounded-full shrink-0 funnel-dot-{{ item.tier }}"></span>
+                        <span class="text-sm font-medium text-on-surface">{{ item.label }}</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs text-on-surface-variant">({{ item.count }} pengguna)</span>
+                        <span class="text-sm font-semibold text-on-surface">{{ item.pct }}%</span>
+                    </div>
+                </div>
+                <div class="h-2 w-full bg-surface-container-low rounded-full overflow-hidden">
+                    <div class="funnel-bar h-full rounded-full transition-all duration-700 funnel-bar-{{ item.tier }}"
+                         data-pct="{{ item.pct }}"></div>
+                </div>
+                <p class="text-[11px] text-on-surface-variant mt-1">{{ item.sub }}</p>
+            </div>
+            {% else %}
+            <p class="text-sm text-on-surface-variant italic">
+                Belum ada data journey. Pastikan tabel
+                <code>journey_step_progress</code> sudah terisi.
+            </p>
+            {% endfor %}
+        </div>
+    </div>
+
+    {# DONUT — 2/5 lebar #}
+    <div class="lg:col-span-2 bg-surface rounded-[24px] pillowy-shadow border border-outline-variant/20 p-6 flex flex-col">
+        <div class="mb-5">
+            <span class="text-[10px] font-bold uppercase tracking-[0.15em] text-outline">Sebaran Status</span>
+            <h3 class="font-serif text-xl font-bold text-on-surface mt-0.5">Distribusi Tahap Legalitas</h3>
+            <p class="text-xs text-on-surface-variant mt-1">Berdasarkan tahap terakhir aktif pengguna</p>
+        </div>
+        <div class="flex flex-col items-center gap-5 flex-1 justify-center">
+            <div class="relative" style="width:180px;height:180px;">
+                <canvas id="donutChart" role="img"
+                    aria-label="Donut chart distribusi pengguna berdasarkan tahap legalitas terakhir">
+                </canvas>
+                <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    <span class="text-2xl font-serif font-bold text-on-surface" id="donutCenter">
+                        {{ legal_done_rate }}%
+                    </span>
+                    <span class="text-[10px] text-on-surface-variant">Selesai</span>
+                </div>
+            </div>
+            <div class="w-full space-y-2.5" id="donutLegend">
+                {% for i in range(analytics.donut.labels | length) %}
+                <div class="flex items-center justify-between text-xs">
+                    <div class="flex items-center gap-2">
+                        <span class="w-2.5 h-2.5 rounded-sm shrink-0 donut-legend-swatch"
+                              data-color="{{ analytics.donut.colors[i] }}"></span>
+                        <span class="text-on-surface-variant">{{ analytics.donut.labels[i] }}</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-on-surface-variant text-[10px]">
+                            ({{ analytics.donut.counts[i] }})
+                        </span>
+                        <span class="font-semibold text-on-surface">{{ analytics.donut.values[i] }}%</span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+</div>
+
+{# ── Data source note ─────────────────────────────────────────────────────── #}
+<p class="text-[11px] text-on-surface-variant text-center mt-6 flex items-center justify-center gap-1.5">
+    <span class="material-symbols-outlined text-[14px]">info</span>
+    Semua data diambil langsung dari database. Auto-refresh setiap 2 menit.
+    <a href="?bulan={{ n_months }}" class="underline hover:text-on-surface transition-colors ml-1">
+        Refresh manual
+    </a>
+</p>
+
+{% endblock %}
+
+
+{% block scripts %}
+<style>
+    /* Funnel tier colors — menggantikan inline style Jinja2 agar tidak 
+       memicu false-positive CSS linter di VS Code */
+    .funnel-dot-kelurahan { background-color: #5B7CF6; }
+    .funnel-dot-kua       { background-color: #34C985; }
+    .funnel-dot-done      { background-color: #F5A623; }
+
+    .funnel-bar-kelurahan { background-color: #5B7CF6; }
+    .funnel-bar-kua       { background-color: #34C985; }
+    .funnel-bar-done      { background-color: #F5A623; }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+// ── Data dari Jinja2 (server-side, real dari DB) ──────────────────────────
+const ANALYTICS = JSON.parse('{{ analytics | tojson | safe }}');
+const N_MONTHS  = Number('{{ n_months }}');
+
+// ── Format angka Indonesia ─────────────────────────────────────────────────
+function fmtID(n) {
+    return Number(n).toLocaleString('id-ID');
+}
+
+// ── Set lebar funnel bar via JS (menggantikan inline style width Jinja2) ───
+function initFunnelBars() {
+    document.querySelectorAll('.funnel-bar[data-pct]').forEach(el => {
+        el.style.width = el.dataset.pct + '%';
+    });
+}
+
+// ── Set warna donut legend swatch via JS ───────────────────────────────────
+function initDonutSwatches() {
+    document.querySelectorAll('.donut-legend-swatch[data-color]').forEach(el => {
+        el.style.backgroundColor = el.dataset.color;
+    });
+}
+
+// ── ① LINE CHART ──────────────────────────────────────────────────────────
+let lineChart;
+function initLineChart(data) {
+    const ctx = document.getElementById('lineChart');
+    if (lineChart) lineChart.destroy();
+    lineChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: data.chart.labels,
+            datasets: [
+                {
+                    label: 'Pendaftaran baru',
+                    data: data.chart.registrations,
+                    borderColor: '#5B7CF6',
+                    backgroundColor: 'rgba(91,124,246,0.08)',
+                    borderWidth: 2,
+                    pointRadius: 5,
+                    pointBackgroundColor: '#5B7CF6',
+                    pointBorderColor: '#ffffff',
+                    pointBorderWidth: 2,
+                    tension: 0.38,
+                    fill: true,
+                },
+                {
+                    label: 'Berhasil sinkron',
+                    data: data.chart.synced,
+                    borderColor: '#34C985',
+                    backgroundColor: 'rgba(52,201,133,0.07)',
+                    borderWidth: 2,
+                    pointRadius: 5,
+                    pointBackgroundColor: '#34C985',
+                    pointBorderColor: '#ffffff',
+                    pointBorderWidth: 2,
+                    tension: 0.38,
+                    fill: true,
+                },
+                {
+                    label: 'Pending pairing',
+                    data: data.chart.pending,
+                    borderColor: '#F5A623',
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    borderDash: [6, 4],
+                    pointRadius: 4,
+                    pointBackgroundColor: '#F5A623',
+                    pointBorderColor: '#ffffff',
+                    pointBorderWidth: 2,
+                    tension: 0.38,
+                    fill: false,
+                },
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    backgroundColor: '#ffffff',
+                    borderColor: '#E8E5DC',
+                    borderWidth: 1,
+                    titleColor: '#1A1917',
+                    bodyColor: '#6B6960',
+                    padding: 12,
+                    cornerRadius: 12,
+                    callbacks: {
+                        label: ctx => ` ${ctx.dataset.label}: ${fmtID(ctx.parsed.y)}`
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    grid: { color: '#F0EDE4' },
+                    ticks: { color: '#898781', font: { size: 12 } },
+                    border: { color: '#D5D2C8' }
+                },
+                y: {
+                    grid: { color: '#F0EDE4' },
+                    beginAtZero: true,
+                    ticks: {
+                        color: '#898781',
+                        font: { size: 12 },
+                        callback: v => fmtID(v)
+                    },
+                    border: { color: '#D5D2C8' }
+                }
+            }
+        }
+    });
+}
+
+// ── ② DONUT CHART ─────────────────────────────────────────────────────────
+let donutChart;
+function initDonutChart(data) {
+    const ctx = document.getElementById('donutChart');
+    if (donutChart) donutChart.destroy();
+    donutChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: data.donut.labels,
+            datasets: [{
+                data: data.donut.values,
+                backgroundColor: data.donut.colors,
+                borderWidth: 3,
+                borderColor: '#ffffff',
+                hoverOffset: 5,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: '68%',
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: '#ffffff',
+                    borderColor: '#E8E5DC',
+                    borderWidth: 1,
+                    titleColor: '#1A1917',
+                    bodyColor: '#6B6960',
+                    cornerRadius: 12,
+                    callbacks: {
+                        label: ctx => ` ${ctx.label}: ${ctx.parsed}% (${fmtID(data.donut.counts[ctx.dataIndex])} pengguna)`
+                    }
+                }
+            }
+        }
+    });
+}
+
+// ── ③ Update KPI tiles (dipanggil saat refresh) ───────────────────────────
+function updateKPIs(data) {
+    document.getElementById('kpi-total').textContent    = fmtID(data.total_users);
+    document.getElementById('kpi-synced').textContent   = fmtID(data.synced_pairs);
+    document.getElementById('kpi-adoption').textContent = data.adoption_rate.toString().replace('.', ',') + '%';
+    document.getElementById('kpi-legal').textContent    = data.legal_done_rate.toString().replace('.', ',') + '%';
+    document.getElementById('lastUpdate').textContent   = data.generated_at;
+    document.getElementById('donutCenter').textContent  = data.legal_done_rate.toString().replace('.', ',') + '%';
+}
+
+// ── ④ Update tabel riwayat (dipanggil saat refresh) ───────────────────────
+function updateHistory(data) {
+    const tbody = document.getElementById('historyBody');
+    if (!tbody) return;
+    const rows = [...data.history].reverse();
+    tbody.innerHTML = rows.map((row, i) => {
+        const konversi = row.registrations > 0
+            ? (row.synced / row.registrations * 100).toFixed(1) + '%'
+            : '—';
+        const isLatest = i === 0;
+        return `
+        <tr class="border-b border-outline-variant/10 hover:bg-surface-container-lowest transition-colors
+                   ${isLatest ? 'font-semibold' : ''}">
+            <td class="py-2.5 px-3 text-on-surface flex items-center gap-2">
+                ${isLatest ? '<span class="w-1.5 h-1.5 rounded-full bg-primary inline-block"></span>' : ''}
+                ${row.label}
+                ${isLatest ? '<span class="text-[10px] text-primary ml-1">(terbaru)</span>' : ''}
+            </td>
+            <td class="py-2.5 px-3 text-right text-on-surface">${fmtID(row.registrations)}</td>
+            <td class="py-2.5 px-3 text-right text-primary">${fmtID(row.synced)}</td>
+            <td class="py-2.5 px-3 text-right text-[#F5A623]">${fmtID(row.pending)}</td>
+            <td class="py-2.5 px-3 text-right text-on-surface-variant">${konversi}</td>
+        </tr>`;
+    }).join('');
+}
+
+// ── ⑤ Fetch & refresh semua komponen ─────────────────────────────────────
+async function refreshData() {
+    try {
+        const resp = await fetch(`/api/analytics?bulan=${N_MONTHS}`);
+        if (!resp.ok) return;
+        const data = await resp.json();
+        updateKPIs(data);
+        updateHistory(data);
+        initLineChart(data);
+        initDonutChart(data);
+    } catch (err) {
+        console.warn('Refresh analytics gagal:', err);
+    }
+}
+
+// ── Init awal dari data Jinja2 (tidak perlu fetch lagi saat load) ─────────
+document.addEventListener('DOMContentLoaded', () => {
+    initFunnelBars();
+    initDonutSwatches();
+    initLineChart(ANALYTICS);
+    initDonutChart(ANALYTICS);
+
+    // Auto-refresh setiap 2 menit
+    setInterval(refreshData, 2 * 60 * 1000);
+});
+</script>
+{% endblock %}
