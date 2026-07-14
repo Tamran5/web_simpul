@@ -11,6 +11,7 @@ from flask_migrate import Migrate
 from datetime import timedelta
 from flask_cors import CORS
 from flask_mail import Mail
+from app.services.scheduler import init_scheduler
 
 mail = Mail()
 
@@ -82,37 +83,13 @@ def create_app():
 
     with app.app_context():
         db.create_all()
-        _preload_face_model()
+
+    if os.environ.get("WERKZEUG_RUN_MAIN") != "true" or not app.debug:
+        init_scheduler(app)
+
 
     return app
 
-
-def _preload_face_model():
-    try:
-        from deepface import DeepFace
-        import numpy as np
-        import cv2
-        import os
-
-        print("Mengecek dan memuat model Face Recognition...")
-
-        dummy_path = "temp_model_warmup.jpg"
-        dummy_img  = np.ones((160, 160, 3), dtype=np.uint8) * 128
-        cv2.imwrite(dummy_path, dummy_img)
-
-        DeepFace.represent(
-            img_path=dummy_path,
-            model_name='Facenet512',
-            enforce_detection=False
-        )
-
-        if os.path.exists(dummy_path):
-            os.remove(dummy_path)
-
-        print("Model siap. Server mulai menerima request.")
-
-    except Exception as e:
-        print(f"Model gagal dimuat: {e}. Face recognition mungkin lambat di request pertama.")
 
 
 def _register_blueprints(app: Flask) -> None:
@@ -138,7 +115,7 @@ def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(journey_bp)
     app.register_blueprint(pair_bp)
 
-    from app.routes.admin import auth_web_bp, pages_bp, api_articles_bp, api_vendors_bp, api_users_bp, admin_bp
+    from app.routes.admin import auth_web_bp, pages_bp, api_articles_bp, api_vendors_bp, api_users_bp, admin_bp, visualization_bp
 
     app.register_blueprint(auth_web_bp)
     app.register_blueprint(pages_bp)
@@ -146,3 +123,4 @@ def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(api_vendors_bp)
     app.register_blueprint(api_users_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(visualization_bp, url_prefix="/api/visualization")

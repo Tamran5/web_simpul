@@ -228,6 +228,7 @@ class Vendor(db.Model):
     philosophy     = db.Column(db.Text,        nullable=True)
     portfolio_urls = db.Column(db.JSON,        nullable=True)
     packages       = db.Column(db.JSON,        nullable=True)
+    
 
     def to_dict(self) -> dict:
         return {
@@ -259,6 +260,7 @@ class FavoriteVendor(db.Model):
     id        = db.Column(db.Integer, primary_key=True)
     user_id   = db.Column(db.Integer, db.ForeignKey('users.id',    ondelete='CASCADE'), nullable=False)
     vendor_id = db.Column(db.Integer, db.ForeignKey('vendors.id',  ondelete='CASCADE'), nullable=False)
+    created_at = db.Column(db.DateTime,default=datetime.utcnow)
 
     vendor = db.relationship('Vendor', backref=db.backref('favorited_by', lazy='dynamic'))
 

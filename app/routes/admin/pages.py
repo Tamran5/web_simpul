@@ -23,7 +23,57 @@ pages_bp = Blueprint('admin_pages', __name__)
 @pages_bp.route('/dashboard')
 @login_required
 def dashboard():
-    return render_template('admin/dashboard.html')
+    total_users = User.query.count()
+    total_vendors = Vendor.query.count()
+    total_articles = Article.query.count()
+
+    recent_vendors = (
+        Vendor.query
+        .order_by(Vendor.id.desc())
+        .limit(5)
+        .all()
+    )
+
+    STEP_DOCS = [
+        ("rt_rw", "Surat Pengantar RT/RW"),
+        ("kelurahan_n1234", "Dokumen Kelurahan"),
+        ("kua_daftar", "Pendaftaran KUA"),
+        ("kua_bimbingan", "Bimbingan Pranikah"),
+        ("kua_akad", "Akad Nikah"),
+    ]
+
+    doc_progress = []
+    percentages = []
+
+    for step_key, label in STEP_DOCS:
+        done_count = (
+            JourneyStepProgress.query.filter_by(
+                step_key=step_key,
+                is_done=True
+            ).count()
+        )
+
+        pct = round((done_count / total_users) * 100, 1) if total_users else 0
+
+        percentages.append(pct)
+
+        doc_progress.append({
+            "label": label,
+            "count": done_count,
+            "pct": pct
+        })
+
+    avg_done = round(sum(percentages) / len(percentages), 1) if percentages else 0
+
+    return render_template(
+        "admin/dashboard.html",
+        total_users=total_users,
+        total_vendors=total_vendors,
+        total_articles=total_articles,
+        recent_vendors=recent_vendors,
+        avg_done=avg_done,
+        doc_progress=doc_progress,
+    )
 
 
 # ── Vendor ────────────────────────────────────────────────────────────────────
