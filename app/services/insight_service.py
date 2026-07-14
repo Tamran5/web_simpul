@@ -1,5 +1,5 @@
 import logging
-from scipy.stats import pearsonr
+# from scipy.stats import pearsonr
 from app.extensions import db
 from app.models_visualization import ExternalTrendData, CategoryInsight
 from app.services.trend_service import KEYWORD_CATEGORY_MAP

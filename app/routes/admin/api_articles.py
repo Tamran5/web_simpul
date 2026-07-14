@@ -7,6 +7,7 @@
 from datetime import datetime
 
 from flask import Blueprint, request, jsonify
+from typing import Optional
 
 from app.extensions import db
 from app.models import Article
@@ -121,7 +122,7 @@ def _article_dict(a: Article) -> dict:
     }
 
 
-def _validate_content_length(konten: str) -> str | None:
+def _validate_content_length(konten: str) -> Optional[str]:
     """Return pesan error atau None jika valid."""
     if len(konten) < MIN_CONTENT_LEN:
         return (

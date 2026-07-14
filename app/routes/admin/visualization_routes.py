@@ -4,13 +4,14 @@ from flask import Blueprint, jsonify, request
 from sqlalchemy import func
 
 from app.extensions import db
+from typing import Dict, Optional
 from app.models_visualization import CategoryInsight, ExternalTrendData
 
 visualization_bp = Blueprint("visualization", __name__, url_prefix="/api/visualization")
 
 
 # ── Helper: hitung batas bawah tanggal berdasarkan param range ───────────
-_RANGE_DAYS: dict[str, int | None] = {
+_RANGE_DAYS: Dict[str, Optional[int]] = {
     "week":   7,
     "month":  30,
     "3month": 90,
@@ -18,7 +19,7 @@ _RANGE_DAYS: dict[str, int | None] = {
     "all":    None,          # None = tanpa filter tanggal
 }
 
-def _date_cutoff(range_param: str) -> datetime | None:
+def _date_cutoff(range_param: str) -> Optional[datetime]:
     """
     Kembalikan datetime batas bawah (UTC, naive) sesuai range_param.
     Kembalikan None jika range = 'all' atau tidak dikenali.

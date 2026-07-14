@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity, create_access_token, create_refresh_token
-from scipy.spatial import distance
+# from scipy.spatial import distance
+import math
 from datetime import datetime
 
 from app.extensions import db, limiter
@@ -18,6 +19,14 @@ def ratelimit_handler(e):
         'status': 'fail',
         'message': 'Terlalu banyak percobaan. Silakan coba lagi beberapa saat lagi.',
     }), 429
+
+def calculate_cosine_distance(vec1, vec2):
+    dot_product = sum(a * b for a, b in zip(vec1, vec2))
+    mag1 = math.sqrt(sum(a * a for a in vec1))
+    mag2 = math.sqrt(sum(b * b for b in vec2))
+    if mag1 == 0 or mag2 == 0:
+        return 1.0 
+    return 1.0 - (dot_product / (mag1 * mag2))
 
 
 def _validate_embedding(data):
@@ -78,7 +87,7 @@ def login_with_face():
     best_user, best_distance = None, None
     for candidate in candidates:
         try:
-            cosine_dist = distance.cosine(candidate.face_embedding, embedding_login)
+            cosine_dist = calculate_cosine_distance(candidate.face_embedding, embedding_login)
         except Exception:
             # Lewati data embedding yang rusak/format tidak sesuai, jangan
             # sampai satu data korup menggagalkan seluruh proses login.
