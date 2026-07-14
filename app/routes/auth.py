@@ -17,12 +17,16 @@ from google.auth.transport import requests as google_requests
 
 from app.extensions import db
 from app.models import User
-from app.services.mail_service import send_verification_email, send_otp_email
+from app.services.mail_service import send_otp_email
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 
 
 # ── POST /api/auth/register ───────────────────────────────────────────────────
+#
+# Registrasi sekarang mengirim kode OTP 6 digit ke email (bukan link
+# verifikasi). User memasukkan kode itu di halaman OTP verification
+# di Flutter, lalu lanjut ke pendaftaran Face Recognition.
 
 @auth_bp.route('/register', methods=['POST'])
 def register():
@@ -32,12 +36,13 @@ def register():
     if not all(f in data for f in required):
         return jsonify({'status': 'fail', 'message': 'Data pendaftaran tidak lengkap.'}), 400
 
-    if User.query.filter_by(email=data['email']).first():
+    email = data['email'].strip().lower()
+    if User.query.filter_by(email=email).first():
         return jsonify({'status': 'fail', 'message': 'Email sudah terdaftar.'}), 409
 
     user = User(
         name           = data['name'],
-        email          = data['email'],
+        email          = email,
         password       = generate_password_hash(data['password']),
         gender         = data['gender'],
         religion       = data['religion'],
@@ -49,16 +54,120 @@ def register():
         is_verified    = False,
     )
     user.generate_unique_code()
+
+    # ── Buat kode OTP registrasi (pakai kolom yang sama dgn forgot-password) ──
+    otp = ''.join(random.choices(string.digits, k=6))
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    user.otp_code   = otp
+    user.otp_expiry = now + timedelta(minutes=5)
+
     db.session.add(user)
     db.session.commit()
 
-    verify_url = f"{request.host_url.rstrip('/')}/auth/verify-email/{user.id}"
-    send_verification_email(user.name, user.email, verify_url)
+    sent = send_otp_email(user.name, user.email, otp)
+    if not sent:
+        current_app.logger.error(f'Gagal mengirim OTP registrasi ke {user.email}')
 
     return jsonify({
-        'status':  'success',
-        'message': 'Registrasi sukses! Silakan cek email untuk verifikasi akun.',
+        'status':            'success',
+        'message':           'Registrasi berhasil! Masukkan kode OTP yang dikirim ke email Anda.',
+        'email':             user.email,
+        'remaining_seconds': 300,
     }), 201
+
+
+# ── POST /api/auth/verify-register-otp ────────────────────────────────────────
+#
+# Verifikasi kode OTP registrasi. Jika benar, akun jadi aktif dan langsung
+# dapat access_token + refresh_token (auto-login), lalu Flutter mengarahkan
+# ke halaman pendaftaran Face Recognition.
+
+@auth_bp.route('/verify-register-otp', methods=['POST'])
+def verify_register_otp():
+    data      = request.get_json() or {}
+    email     = data.get('email', '').strip().lower()
+    otp_input = data.get('otp', '')
+
+    if not email or not otp_input:
+        return jsonify({'status': 'fail', 'message': 'Email dan kode OTP wajib diisi.'}), 400
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({'status': 'fail', 'message': 'Akun tidak ditemukan.'}), 404
+
+    if user.is_verified:
+        # Sudah pernah diverifikasi sebelumnya — tetap kembalikan token
+        # supaya Flutter bisa lanjut tanpa error membingungkan.
+        return jsonify({
+            'status':          'success',
+            'message':         'Akun sudah terverifikasi sebelumnya.',
+            'access_token':    create_access_token(identity=str(user.id)),
+            'refresh_token':   create_refresh_token(identity=str(user.id)),
+            'face_registered': user.face_registered,
+        }), 200
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    if not user.otp_code or not user.otp_expiry or now > user.otp_expiry:
+        return jsonify({'status': 'fail', 'message': 'Kode OTP sudah kedaluwarsa. Silakan kirim ulang.'}), 400
+
+    if user.otp_code != otp_input:
+        return jsonify({'status': 'fail', 'message': 'Kode OTP salah.'}), 400
+
+    user.is_verified = True
+    user.otp_code    = None
+    user.otp_expiry  = None
+    db.session.commit()
+
+    return jsonify({
+        'status':          'success',
+        'message':         'Verifikasi berhasil! Selamat datang di Simpul.',
+        'access_token':    create_access_token(identity=str(user.id)),
+        'refresh_token':   create_refresh_token(identity=str(user.id)),
+        'face_registered': user.face_registered,
+    }), 200
+
+
+# ── POST /api/auth/resend-register-otp ────────────────────────────────────────
+
+@auth_bp.route('/resend-register-otp', methods=['POST'])
+def resend_register_otp():
+    data  = request.get_json() or {}
+    email = data.get('email', '').strip().lower()
+
+    if not email:
+        return jsonify({'status': 'fail', 'message': 'Email wajib diisi.'}), 400
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({'status': 'fail', 'message': 'Akun tidak ditemukan.'}), 404
+
+    if user.is_verified:
+        return jsonify({'status': 'fail', 'message': 'Akun sudah terverifikasi. Silakan login.'}), 400
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    if user.otp_code and user.otp_expiry and user.otp_expiry > now:
+        sisa = int((user.otp_expiry - now).total_seconds())
+        return jsonify({
+            'status':            'success',
+            'message':           f'Kode OTP sebelumnya masih aktif (tersisa {max(1, round(sisa/60))} menit).',
+            'remaining_seconds': sisa,
+        }), 200
+
+    otp = ''.join(random.choices(string.digits, k=6))
+    user.otp_code   = otp
+    user.otp_expiry = now + timedelta(minutes=5)
+    db.session.commit()
+
+    success = send_otp_email(user.name, user.email, otp)
+    if not success:
+        return jsonify({'status': 'fail', 'message': 'Gagal mengirim ulang kode OTP.'}), 500
+
+    return jsonify({
+        'status':            'success',
+        'message':           'Kode OTP baru telah dikirim ke email Anda.',
+        'remaining_seconds': 300,
+    }), 200
 
 
 # ── POST /api/auth/login ──────────────────────────────────────────────────────

@@ -49,8 +49,8 @@ def manajemen_pengguna():
     
     for u in users:
         pair_info = pair_service.get_pair_info(u)
-        u.is_synced = pair_info.get('is_synced', False)
-        u.partner_name = ''
+        if not u.partner_name:
+            u.partner_name = '-'
         if u.is_synced and pair_info.get('partner'):
             u.partner_name = pair_info['partner'].get('name', '')
 
