@@ -1,21 +1,3 @@
-"""
-app/routes/visualization.py
-────────────────────────────────────────────────────────────────────
-Blueprint untuk endpoint data visualisasi dashboard Simpul.
-
-Semua endpoint menerima query-param  ?range=<nilai>  dengan pilihan:
-    week   → 7 hari terakhir
-    month  → 30 hari terakhir
-    3month → 90 hari terakhir   (default)
-    year   → 365 hari terakhir
-    all    → semua data tersedia
-
-Contoh pemakaian:
-    GET /api/visualization/trend-line?range=month
-    GET /api/visualization/keyword-comparison?range=year
-    GET /api/visualization/insights?range=week
-"""
-
 from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, jsonify, request

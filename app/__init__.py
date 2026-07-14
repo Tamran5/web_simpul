@@ -11,7 +11,7 @@ from flask_migrate import Migrate
 from datetime import timedelta
 from flask_cors import CORS
 from flask_mail import Mail
-from app.services.scheduler import init_scheduler
+# from app.services.scheduler import init_scheduler
 
 mail = Mail()
 
@@ -84,8 +84,8 @@ def create_app():
     with app.app_context():
         db.create_all()
 
-    if os.environ.get("WERKZEUG_RUN_MAIN") != "true" or not app.debug:
-        init_scheduler(app)
+    # if os.environ.get("WERKZEUG_RUN_MAIN") != "true" or not app.debug:
+    #     init_scheduler(app)
 
 
     return app
@@ -115,7 +115,7 @@ def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(journey_bp)
     app.register_blueprint(pair_bp)
 
-    from app.routes.admin import auth_web_bp, pages_bp, api_articles_bp, api_vendors_bp, api_users_bp, admin_bp, visualization_bp
+    from app.routes.admin import auth_web_bp, pages_bp, api_articles_bp, api_vendors_bp, api_users_bp, admin_bp, visualization_bp, scheduler_bp
 
     app.register_blueprint(auth_web_bp)
     app.register_blueprint(pages_bp)
@@ -123,4 +123,5 @@ def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(api_vendors_bp)
     app.register_blueprint(api_users_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(scheduler_bp)
     app.register_blueprint(visualization_bp, url_prefix="/api/visualization")
